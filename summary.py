@@ -158,7 +158,7 @@ class MMR(SummaryExtractor):
             importance = {}
             for sent in scores.keys():
                 if sent not in output:
-                    importance[sent] = mmr_lambda * scores[sent] + (1-mmr_lambda) * self.eval_sim(sent, "。".join(list(output)))
+                    importance[sent] = mmr_lambda * scores[sent] - (1-mmr_lambda) * self.eval_sim(sent, "。".join(list(output)))
             seleted_sent = max(importance.items(), key=lambda x:x[1])[0]
             output.add(seleted_sent)
             k -= 1
