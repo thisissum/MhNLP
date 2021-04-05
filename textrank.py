@@ -1,12 +1,12 @@
-# 实现textrank和lexrank等长文本摘要的通用接口
-#
 import math
 import numpy as np
 from typing import *
 
+from paddle.fluid.layers.nn import topk
+
 
 class TextRank(object):
-    # 如何分词，如何分句，句向量如何表示，停用词表，
+    
     def __init__(
         self, 
         d: float = 0.85, 
@@ -35,11 +35,10 @@ class TextRank(object):
     def summarize_document(
         self, 
         text: str, 
-        n: int, 
-        retain_order: bool = True
+        k: int
     ) -> Union[List[str], List[Tuple[str, float]]]:
 
-        n = n if n > 1 else 1
+        k = k if k > 1 else 1
         sents = self.sent_tokenizer(text)
         sent_num = len(sents)
         # get similarity matrix of sentences
@@ -47,57 +46,20 @@ class TextRank(object):
         sents_importance = self._pagerank(sim_matrix)
         
         output = [(sents[i], sents_importance[i]) for i in range(sent_num)]
-        sorted_output = sorted(output, key=lambda x:x[1], reverse=True)
-        topn_output = sorted_output[:n]
-        topn_sents = [topn_output[i][0] for i in range(len(topn_output))]
+        # select topk output
+        return self._topk(output, k)
 
-        if self.return_importance and retain_order:
-            return [sent_with_importance for sent_with_importance in output if sent_with_importance[0] in topn_sents]
-        if self.return_importance and not retain_order:
-            return topn_output
-        if not self.return_importance and retain_order:
-            return [sent for sent in sents if sent in topn_sents]
-        if not self.return_importance and not retain_order:
-            return topn_sents
-    
-
-    def extract_keywords(
-        self, 
-        text: str, 
-        n: int, 
-        window_size: int = 5,
-    ) -> Union[List[str], List[Tuple[str, float]]]:
-
-        n = n if n > 1 else 1
-        words = self.word_tokenzier(text)
-        # compute word co-occurance matrix
-        sim_matrix, id2word = self._eval_word_similarity(words, window_size=window_size)
-        words_importance = self._pagerank(sim_matrix)
-
-        output = [(id2word[int(idx)], words_importance[int(idx)]) for idx in id2word.keys()]
-        sorted_output = sorted(output, key=lambda x:x[1], reverse=True)
-
-        if self.return_importance:
-            return sorted_output[:n]
-
-        return [sorted_output[i][0] for i in range(n)]
-    
 
     def eval_importance(
         self,
         text_pieces: List[str], 
         sim_matrix: np.ndarray,
-        n: int
+        k: int
     ) -> Union[List[int], List[Tuple[int, float]]]:
-        n = n if n > 1 else 1
+        k = k if k > 1 else 1
         importance = self._pagerank(sim_matrix)
         output = [(text_pieces[i], importance[i]) for i in range(len(sim_matrix))]
-        sorted_output = sorted(output, key=lambda x:x[1], reverse=True)
-
-        # return importance of each idx in sim_matrix
-        if self.return_importance:
-            return sorted_output[:n]
-        return [sorted_output[i][0] for i in range(min(n, len(sim_matrix)))]
+        return self._topk(output, k)
 
 
     def _pagerank(self, sim_matrix: np.ndarray) -> np.ndarray:
@@ -118,28 +80,6 @@ class TextRank(object):
                 break
 
         return importance
-
-
-    def _eval_word_similarity(
-        self, 
-        words: List[str], 
-        window_size: int = 5
-    ) -> np.ndarray:
-        # remove stopword in words
-        words = [word for word in words if word not in self.stopwords]
-        word_list = list(set(words))
-        id2word = {i: word for i, word in enumerate(word_list)}
-        word2id = {word: i for i, word in enumerate(word_list)}
-        word_sim_matrix = np.zeros((len(id2word), len(id2word)))
-        for i, word in enumerate(words):
-            for j in range(max(0, i-window_size), min(i+window_size, len(words))):
-                # update co-occurance matrix within [i-window_size, i+window size]
-                if i != j:
-                    word_id = word2id[word]
-                    co_occ_word_id = word2id[words[j]]
-                    word_sim_matrix[word_id, co_occ_word_id] += 1
-                    word_sim_matrix[co_occ_word_id, word_id] += 1
-        return word_sim_matrix, id2word
 
 
     def _eval_sent_similarity(
@@ -164,6 +104,20 @@ class TextRank(object):
                 sent_similarity_matrix[i, j] = similarity
                 sent_similarity_matrix[j, i] = similarity
         return sent_similarity_matrix
+
+
+    def _topk(
+        self, 
+        output: Tuple[str, float],
+        k: int
+    ) -> Union[List[str], List[Tuple[str, float]]]:
+        sorted_output = sorted(output, key=lambda x:x[1], reverse=True)
+        topk_importance = set([pair[1] for pair in sorted_output[:k]])
+        if self.return_importance:
+            return [pair for pair in output if pair[1] in topk_importance]
+        else:
+            return [pair[0] for pair in output if pair[1] in topk_importance]
+        
 
 if __name__ == "__main__":
     text = "中新网1月11日电据商务部网站消息，商务部办公厅近日印发通知，提出重点地区的电商企业要逐步停止使用不可降解的塑料包装袋、一次性塑料编织袋，减少使用不可降解塑料胶带。  \
@@ -203,9 +157,7 @@ if __name__ == "__main__":
         加强宣传引导。及时总结电商企业绿色发展成效和典型做法，报送优秀典型和案例，利用全国电子商务公共服务平台以及报纸、广播电视、网络新媒体等渠道加强宣传推广。\
         充分调动行业协会、服务机构等中介组织的积极性，加强法规、标准宣贯，组织更多企业响应《电子商务绿色发展倡议》，推动行业自律，更好履行社会责任。\
         利用“全国节能宣传周”等节点，积极宣传绿色消费理念，引导全社会形成简约适度、绿色低碳的生活方式。"
-    text = text.strip()
+    text = text.strip().replace(" ", '')
     tr = TextRank(return_importance=True)
-    sentences = tr.summarize_document(text, n=3, retain_order=True)
-    keywords = tr.extract_keywords(text, n=50, window_size=10)
+    sentences = tr.summarize_document(text, k=3)
     print(sentences)
-    print(keywords)
