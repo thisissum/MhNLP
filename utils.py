@@ -24,8 +24,10 @@ def load_stopwords(path="./resource/stopwords.txt"):
         stopwords = list(map(lambda x: x.replace("\n",""), f.readlines()))
     return stopwords
 
+
 def drop_url(text: str, pattern: str=r'(https|http)?:\/\/(\w|\.|\/|\?|\=|\&|\%)*\b'):
     return re.sub(pattern, "", text)
+
 
 def drop_html(text: str, pattern: str=r"<.*?>"):
     output = [piece for piece in re.sub(pattern, " ", text).split(" ") if piece]
