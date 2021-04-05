@@ -25,7 +25,7 @@ class SummaryExtractor(object):
         else:
             self.word_tokenzier = word_tokenizer
 
-        self.eval_sim = eval_sim
+        self.eval_sim = eval_sim if eval_sim else self._default_eval_sim
 
         self.stopwords = set(stopwords)
         self.max_iter = max_iter
@@ -59,7 +59,7 @@ class SummaryExtractor(object):
                 # compute similarity between sent_i and sent_j
                 sent_i = sents[i]
                 sent_j = sents[j]
-                similarity = self.eval_sim(sent_i, sent_j) if self.eval_sim else self._default_eval_sim(sent_i, sent_j)
+                similarity = self.eval_sim(sent_i, sent_j)
                 sent_similarity_matrix[i, j] = similarity
                 sent_similarity_matrix[j, i] = similarity
         return sent_similarity_matrix
@@ -168,11 +168,6 @@ class MMR(SummaryExtractor):
         
 
 
-
-
-
-
-
 if __name__ == "__main__":
     text = "中新网1月11日电据商务部网站消息，商务部办公厅近日印发通知，提出重点地区的电商企业要逐步停止使用不可降解的塑料包装袋、一次性塑料编织袋，减少使用不可降解塑料胶带。  \
         资料图：工作人员分拣快递。\
@@ -212,6 +207,6 @@ if __name__ == "__main__":
         充分调动行业协会、服务机构等中介组织的积极性，加强法规、标准宣贯，组织更多企业响应《电子商务绿色发展倡议》，推动行业自律，更好履行社会责任。\
         利用“全国节能宣传周”等节点，积极宣传绿色消费理念，引导全社会形成简约适度、绿色低碳的生活方式。"
     text = text.strip().replace(" ", '')
-    tr = TextRank(return_importance=True)
-    sentences = tr.summarize_document(text, k=3)
+    tr = MMR(return_importance=True)
+    sentences = tr.summarize_document(text, k=3, mmr_lambda=0.9)
     print(sentences)
