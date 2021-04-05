@@ -1,24 +1,22 @@
+import re
 import math
 import numpy as np
 from typing import *
+import warnings
 
-from paddle.fluid.layers.nn import topk
 
-
-class TextRank(object):
-    
+class SummaryExtractor(object):
     def __init__(
         self, 
-        d: float = 0.85, 
-        sent_tokenizer: Union[Callable[[str], List[str]], str] = "。", 
+        sent_tokenizer: Union[Callable[[str], List[str]], str] = r"。|？|！|；", 
         word_tokenizer: Union[Callable[[str], List[str]], str] = "jieba", 
         stopwords: List[str] = [],
         max_iter: int = 100,
         min_delta: float = 1e-5,
-        return_importance: bool = False
+        return_importance: bool = False,
+        eval_sim: Optional[Callable[[str, str], float]]=None
     ):
-        self.d = d
-        self.sent_tokenizer = lambda x: x.split(sent_tokenizer) \
+        self.sent_tokenizer = lambda x: re.split(sent_tokenizer, x) \
             if isinstance(sent_tokenizer, str) else sent_tokenizer
 
         if word_tokenizer == "jieba":
@@ -27,85 +25,46 @@ class TextRank(object):
         else:
             self.word_tokenzier = word_tokenizer
 
+        self.eval_sim = eval_sim
+
         self.stopwords = set(stopwords)
         self.max_iter = max_iter
         self.min_delta = min_delta
         self.return_importance = return_importance
-
-    def summarize_document(
+    
+    def _default_eval_sim(
         self, 
-        text: str, 
-        k: int
-    ) -> Union[List[str], List[Tuple[str, float]]]:
+        sent1: str,
+        sent2: str
+    ) -> float:
+        sent1 = [word for word in self.word_tokenzier(sent1) if word not in self.stopwords]
+        sent2 = [word for word in self.word_tokenzier(sent2) if word not in self.stopwords]
+        numerator = len(set(sent1) & set(sent2))
+        denominator = math.log(len(sent1)+1e-6) + math.log(len(sent2)+1e-6)
+        if numerator < 1e-12 or denominator < 1e-12:
+            similarity = 0
+        else:
+            similarity = numerator / denominator
+        return similarity
+    
 
-        k = k if k > 1 else 1
-        sents = self.sent_tokenizer(text)
-        sent_num = len(sents)
-        # get similarity matrix of sentences
-        sim_matrix = self._eval_sent_similarity(sents)
-        sents_importance = self._pagerank(sim_matrix)
-        
-        output = [(sents[i], sents_importance[i]) for i in range(sent_num)]
-        # select topk output
-        return self._topk(output, k)
-
-
-    def eval_importance(
-        self,
-        text_pieces: List[str], 
-        sim_matrix: np.ndarray,
-        k: int
-    ) -> Union[List[int], List[Tuple[int, float]]]:
-        k = k if k > 1 else 1
-        importance = self._pagerank(sim_matrix)
-        output = [(text_pieces[i], importance[i]) for i in range(len(sim_matrix))]
-        return self._topk(output, k)
-
-
-    def _pagerank(self, sim_matrix: np.ndarray) -> np.ndarray:
-        n = len(sim_matrix)
-        importance = np.array([1/n for _ in range(n)])
-        sim_matrix *= 1 - np.eye(n)
-
-        for _ in range(self.max_iter):
-            abs_delta = 0
-            importance_last = importance.copy()
-            for i in range(n):
-                # compute ws(v_i) = 1-d + d * sum_over_vj( w_ij/(sum_over_vk(w_jk)) * ws(v_j) )
-                importance[i] = np.sum(sim_matrix[i] / (np.sum(sim_matrix, axis=0)+1e-7) * importance_last) * self.d + (1-self.d)
-
-            abs_delta = np.sum(abs(importance_last - importance))
-            # convergence
-            if abs_delta < self.min_delta:
-                break
-
-        return importance
-
-
-    def _eval_sent_similarity(
+    def _eval_similarity_matrix(
         self, 
         sents: List[str]
-    ) -> np.ndarray:
-        sents_splited = [list(self.word_tokenzier(sent)) for sent in sents]
-        sents_splited = [[word for word in sent_splited if word not in self.stopwords] for sent_splited in sents_splited]
-        sent_num = len(sents_splited)
+    ):
+        sent_num = len(sents)
         sent_similarity_matrix = np.zeros((sent_num, sent_num))
         for i in range(sent_num):
             for j in range(i, sent_num):
                 # compute similarity between sent_i and sent_j
-                sent_i = sents_splited[i]
-                sent_j = sents_splited[j]
-                numerator = len(set(sent_i) & set(sent_j))
-                denominator = math.log(len(sent_i)+1e-6) + math.log(len(sent_j)+1e-6)
-                if numerator < 1e-12 or denominator < 1e-12:
-                    similarity = 0
-                else:
-                    similarity = numerator / denominator
+                sent_i = sents[i]
+                sent_j = sents[j]
+                similarity = self.eval_sim(sent_i, sent_j) if self.eval_sim else self._default_eval_sim(sent_i, sent_j)
                 sent_similarity_matrix[i, j] = similarity
                 sent_similarity_matrix[j, i] = similarity
         return sent_similarity_matrix
 
-
+    
     def _topk(
         self, 
         output: Tuple[str, float],
@@ -117,7 +76,102 @@ class TextRank(object):
             return [pair for pair in output if pair[1] in topk_importance]
         else:
             return [pair[0] for pair in output if pair[1] in topk_importance]
+
+
+class TextRank(SummaryExtractor):
+
+    def summarize_document(
+        self, 
+        text: str, 
+        k: int,
+        d: float = 0.85
+    ) -> Union[List[str], List[Tuple[str, float]]]:
+        k = k if k > 1 else 1
+
+        sents = self.sent_tokenizer(text)
+        sent_num = len(sents)
+
+        # get similarity matrix of sentences
+        sim_matrix = self._eval_similarity_matrix(sents)
+        sents_importance = self._pagerank(sim_matrix, d=d)
         
+        output = [(sents[i], sents_importance[i]) for i in range(sent_num)]
+
+        # select topk output
+        return self._topk(output, k)
+
+    def _pagerank(self, sim_matrix: np.ndarray, d: float = 0.85) -> np.ndarray:
+        n = len(sim_matrix)
+        importance = np.array([1/n for _ in range(n)])
+        sim_matrix *= 1 - np.eye(n)
+
+        for _ in range(self.max_iter):
+            abs_delta = 0
+            importance_last = importance.copy()
+            for i in range(n):
+
+                # compute ws(v_i) = 1-d + d * sum_over_vj( w_ij/(sum_over_vk(w_jk)) * ws(v_j) )
+                importance[i] = np.sum(sim_matrix[i] / (np.sum(sim_matrix, axis=0)+1e-7) * importance_last) * self.d + (1-self.d)
+
+            abs_delta = np.sum(abs(importance_last - importance))
+
+            # convergence
+            if abs_delta < self.min_delta:
+                break
+
+        return importance
+    
+
+
+class MMR(SummaryExtractor):
+    
+    def summarize_document(
+        self, 
+        text: str, 
+        k: int,
+        mmr_lambda: float = 0.9
+    ) -> Union[List[str], List[Tuple[str, float]]]:
+
+        k = k if k > 1 else 1
+        sents = self.sent_tokenizer(text)
+        if self.return_importance:
+            warnings.warn("MMR module does not support 'return_importance' yet.")
+        return self._mmr(sents, k, mmr_lambda)
+    
+
+    def _mmr(
+        self,
+        sents: List[str],
+        k: int,
+        mmr_lambda: float = 0.9
+    ) -> Union[List[str], List[Tuple[str, float]]]:
+        text = "。".join(sents)
+
+        # evaluate similarity score between total text and sentence
+        if self.eval_sim:
+            scores = {sent: self.eval_sim(text, sent) for sent in sents}
+        else:
+            scores = {sent: self._default_eval_sim(text, sent) for sent in sents}
+        
+        output = set()
+        while k > 0:
+            importance = {}
+            for sent in scores.keys():
+                if sent not in output:
+                    importance[sent] = mmr_lambda * scores[sent] + (1-mmr_lambda) * self.eval_sim(sent, "。".join(list(output)))
+            seleted_sent = max(importance.items(), key=lambda x:x[1])[0]
+            output.add(seleted_sent)
+            k -= 1
+        
+        # retain origin order
+        return [sent for sent in sents if sent in output]
+        
+
+
+
+
+
+
 
 if __name__ == "__main__":
     text = "中新网1月11日电据商务部网站消息，商务部办公厅近日印发通知，提出重点地区的电商企业要逐步停止使用不可降解的塑料包装袋、一次性塑料编织袋，减少使用不可降解塑料胶带。  \
