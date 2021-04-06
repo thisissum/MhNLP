@@ -2,6 +2,7 @@ import re
 import jieba
 from typing import *
 
+
 def sentence_tokenize(text: str, pattern: str = r"？|。|；|！"):
     return re.split(pattern, text)
 
