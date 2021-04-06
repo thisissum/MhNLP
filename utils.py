@@ -34,6 +34,9 @@ def drop_html(text: str, pattern: str=r"<.*?>"):
     output = [piece for piece in re.sub(pattern, " ", text).split(" ") if piece]
     return " ".join(output)
 
+def edit_distance(text1, text2):
+    pass
+
 
 
 if __name__ == "__main__":
