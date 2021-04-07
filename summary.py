@@ -16,29 +16,29 @@ class SummaryExtractor(object):
         return_importance: bool = False,
         eval_sim: Optional[Callable[[str, str], float]]=None
     ):
-        self.sent_tokenizer = lambda x: re.split(sent_tokenizer, x) \
+        self._sent_tokenizer = lambda x: re.split(sent_tokenizer, x) \
             if isinstance(sent_tokenizer, str) else sent_tokenizer
 
         if word_tokenizer == "jieba":
             import jieba
-            self.word_tokenzier = jieba.cut
+            self._word_tokenzier = jieba.cut
         else:
-            self.word_tokenzier = word_tokenizer
+            self._word_tokenzier = word_tokenizer
 
-        self.eval_sim = eval_sim if eval_sim else self._default_eval_sim
+        self._eval_sim = eval_sim if eval_sim else self._default_eval_sim
 
-        self.stopwords = set(stopwords)
-        self.max_iter = max_iter
-        self.min_delta = min_delta
-        self.return_importance = return_importance
+        self._stopwords = set(stopwords)
+        self._max_iter = max_iter
+        self._min_delta = min_delta
+        self._return_importance = return_importance
     
     def _default_eval_sim(
         self, 
         sent1: str,
         sent2: str
     ) -> float:
-        sent1 = [word for word in self.word_tokenzier(sent1) if word not in self.stopwords]
-        sent2 = [word for word in self.word_tokenzier(sent2) if word not in self.stopwords]
+        sent1 = [word for word in self._word_tokenzier(sent1) if word not in self._stopwords]
+        sent2 = [word for word in self._word_tokenzier(sent2) if word not in self._stopwords]
         numerator = len(set(sent1) & set(sent2))
         denominator = math.log(len(sent1)+1e-6) + math.log(len(sent2)+1e-6)
         if numerator < 1e-12 or denominator < 1e-12:
@@ -59,7 +59,7 @@ class SummaryExtractor(object):
                 # compute similarity between sent_i and sent_j
                 sent_i = sents[i]
                 sent_j = sents[j]
-                similarity = self.eval_sim(sent_i, sent_j)
+                similarity = self._eval_sim(sent_i, sent_j)
                 sent_similarity_matrix[i, j] = similarity
                 sent_similarity_matrix[j, i] = similarity
         return sent_similarity_matrix
@@ -72,7 +72,7 @@ class SummaryExtractor(object):
     ) -> Union[List[str], List[Tuple[str, float]]]:
         sorted_output = sorted(output, key=lambda x:x[1], reverse=True)
         topk_importance = set([pair[1] for pair in sorted_output[:k]])
-        if self.return_importance:
+        if self._return_importance:
             return [pair for pair in output if pair[1] in topk_importance]
         else:
             return [pair[0] for pair in output if pair[1] in topk_importance]
@@ -88,7 +88,7 @@ class TextRank(SummaryExtractor):
     ) -> Union[List[str], List[Tuple[str, float]]]:
         k = k if k > 1 else 1
 
-        sents = self.sent_tokenizer(text)
+        sents = self._sent_tokenizer(text)
         sent_num = len(sents)
 
         # get similarity matrix of sentences
@@ -105,7 +105,7 @@ class TextRank(SummaryExtractor):
         importance = np.array([1/n for _ in range(n)])
         sim_matrix *= 1 - np.eye(n)
 
-        for _ in range(self.max_iter):
+        for _ in range(self._max_iter):
             abs_delta = 0
             importance_last = importance.copy()
             for i in range(n):
@@ -116,7 +116,7 @@ class TextRank(SummaryExtractor):
             abs_delta = np.sum(abs(importance_last - importance))
 
             # convergence
-            if abs_delta < self.min_delta:
+            if abs_delta < self._min_delta:
                 break
 
         return importance
@@ -132,8 +132,8 @@ class MMR(SummaryExtractor):
     ) -> Union[List[str], List[Tuple[str, float]]]:
 
         k = k if k > 1 else 1
-        sents = self.sent_tokenizer(text)
-        if self.return_importance:
+        sents = self._sent_tokenizer(text)
+        if self._return_importance:
             warnings.warn("MMR module does not support 'return_importance' yet.")
         return self._mmr(sents, k, mmr_lambda)
     
@@ -148,14 +148,14 @@ class MMR(SummaryExtractor):
 
         # evaluate similarity score between total text and sentence
 
-        scores = {sent: self.eval_sim(text, sent) for sent in sents}
+        scores = {sent: self._eval_sim(text, sent) for sent in sents}
         
         output = set()
         while k > 0:
             importance = {}
             for sent in scores.keys():
                 if sent not in output:
-                    importance[sent] = mmr_lambda * scores[sent] - (1-mmr_lambda) * self.eval_sim(sent, "。".join(list(output)))
+                    importance[sent] = mmr_lambda * scores[sent] - (1-mmr_lambda) * self._eval_sim(sent, "。".join(list(output)))
             seleted_sent = max(importance.items(), key=lambda x:x[1])[0]
             output.add(seleted_sent)
             k -= 1
