@@ -148,8 +148,10 @@ class MMR(SummaryExtractor):
         text = "。".join(sents)
 
         # evaluate similarity score between total text and sentence
-
-        scores = {sent: self.eval_sim(text, sent) for sent in sents}
+        if self.eval_sim:
+            scores = {sent: self.eval_sim(text, sent) for sent in sents}
+        else:
+            scores = {sent: self._default_eval_sim(text, sent) for sent in sents}
         
         output = set()
         while k > 0:
