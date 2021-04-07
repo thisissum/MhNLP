@@ -120,7 +120,6 @@ class TextRank(SummaryExtractor):
                 break
 
         return importance
-    
 
 
 class MMR(SummaryExtractor):
@@ -163,7 +162,7 @@ class MMR(SummaryExtractor):
         
         # retain origin order
         return [sent for sent in sents if sent in output]
-        
+
 
 
 if __name__ == "__main__":
