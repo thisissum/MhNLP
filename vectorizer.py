@@ -1,16 +1,9 @@
 import numpy as np
 from typing import *
 
+import gensim
+
 class Vectorizer(object):
-    def __init__(
-        self, 
-        word_tokenizer: Callable[[str], Iterable[str]], 
-        word2id: Optional[Dict[str, int]] = None,
-        embedding_matrix: Optional[np.ndarray] = None,
-    ):
-        self.word_tokenizer = word_tokenizer
-        self.word2id = word2id
-        self.embedding_matrix = embedding_matrix
 
     def save(self, path):
         pass
@@ -43,7 +36,7 @@ class SentenceVectorizer(Vectorizer):
 
 
 
-class WordEmbedding(Vectorizer):
+class WordVectorizer(Vectorizer):
 
     def __init__(self, word_tokenizer, word2id = None, embedding_matrix = None):
         pass
