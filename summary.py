@@ -111,7 +111,7 @@ class TextRank(SummaryExtractor):
             for i in range(n):
 
                 # compute ws(v_i) = 1-d + d * sum_over_vj( w_ij/(sum_over_vk(w_jk)) * ws(v_j) )
-                importance[i] = np.sum(sim_matrix[i] / (np.sum(sim_matrix, axis=0)+1e-7) * importance_last) * self.d + (1-self.d)
+                importance[i] = np.sum(sim_matrix[i] / (np.sum(sim_matrix, axis=0)+1e-7) * importance_last) * d + (1-d)
 
             abs_delta = np.sum(abs(importance_last - importance))
 
